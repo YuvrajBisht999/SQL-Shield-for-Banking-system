@@ -4,119 +4,186 @@ from tkinter.messagebox import * #messagebox is a module of tkinter used for mak
 
 def create_table(conn):  #conn is connection object
 
-    query="create table if not exists accmaster(accno int,name text,balance int)"
+    query = "CREATE TABLE IF NOT EXISTS accmaster (accno INTEGER PRIMARY KEY, name TEXT, balance INTEGER)"
     #will create a table named "accmaster" with 3 columns in the bracket 
 
-    cur=conn.cursor()
-    #cursor of conn is created .cur is cusor object
+    try:
 
-    cur.execute(query)  #execution of query
+        cur=conn.cursor()
+        #cursor of conn is created .cur is cusor object
 
-    conn.commit()  # for comminting changes in datatabase
+        cur.execute(query)  #execution of query
+
+        conn.commit()  # for comminting changes in datatabase
+
+    except Exception as e:
+
+        showerror("Database Error", str(e))
+        #Exception is the base class for most built-in exceptions in Python.
+        #str(e) converts the exception object to a readable string.
+        #showerror() pops up a GUI error dialog with a title and message.
 
 def openAccount_db(conn,accno,name,balance):
 
-    accno=int(accno)   #conversion to integer
+    try:
 
-    balance=int(balance)
+        accno = int(accno)   #conversion to integer
 
-    query="insert into accmaster values(?,?,?)"    # the ?s are placeholders
+        balance = int(balance)
 
-    cur=conn.cursor()
+        if balance < 0:
 
-    cur.execute(query,[accno,name,balance]) #insert query ke placeholders mein pass hojayega 3 datas
+            raise ValueError("Balance cannot  be negative.")
 
-    conn.commit()
+        if not name.strip():
+            raise ValueError("Name cannot be empty")
 
-    if cur.rowcount>0:
+        query="insert into accmaster values(?,?,?)"    # the ?s are placeholders
 
-        showinfo("Bank","Account created successfully")   #showinfo(title,message)   
-        #pop up of showinfo box
+        cur=conn.cursor()
+
+        cur.execute(query,[accno,name,balance]) #insert query ke placeholders mein pass hojayega 3 datas
+
+        conn.commit()
+
+        if cur.rowcount>0:
+
+              showinfo("Bank","Account created successfully")   #showinfo(title,message)   
+              #pop up of showinfo box
+
+    except ValueError:
+
+        showwarning("Bank", "Please enter valid numeric values and a non-empty name.")
+        #Catches ValueError, typically raised when:
+        #Converting non-numeric input using int() or float()
+        #Invalid operations on certain data types
+        #Shows a warning dialog to alert the user that their input was invalid
+
+
+
+    except sqlite3.IntegrityError:
+
+        showwarning("Bank", "Account number already exists.")
+
+    except Exception as e:
+
+        showerror("Database Error", str(e))
+  
 
 def CheckBalance_db(conn,accno):
 
-    accno=int(accno)
+    try:
 
-    query="select * from accmaster where accno=?"
-    # "select query" is the sql query used for data retrival
+        accno=int(accno)
 
-    cur=conn.cursor()
+        query="select * from accmaster where accno=?"
+        # "select query" is the sql query used for data retrival
 
-    cur.execute(query,[accno]) 
+        cur=conn.cursor()
 
-    row=cur.fetchone() # one row is retrived from database in the form of a tupple (0,Yuvraj Bisht,100)
+        cur.execute(query,[accno]) 
 
-    if row==None:
+        row=cur.fetchone() # one row is retrived from database in the form of a tupple (0,Yuvraj Bisht,100)
 
-        showwarning("Bank","Account Not Found") # a warning box will pop up
+        if row==None:
 
-    else:
-
-        showinfo("Bank",f"Accno: {row[0]}\nName:{row[1]}\nBalance:{row[2]}")
-
-def deposit_db(conn,accno,amount):
-    accno=int(accno)  
-
-    amount=int(amount)
-
-    query="update accmaster set balance=balance+? where accno=?"
-
-    cur=conn.cursor()
-
-    cur.execute(query,[amount,accno]) 
-
-    conn.commit()
-
-    if cur.rowcount>0:
-
-        showinfo("Bank","Amount deposited successfully")
-
-    else:
-
-        showwarning("Bank","Account Not Found") 
-
-def withdraw_db(conn,accno,amount):
-    accno=int(accno)  
-
-    amount=int(amount)
-
-
-
-    query="select * from accmaster where accno=?"
-
-    cur=conn.cursor()
-
-    cur.execute(query,[accno]) 
-
-    row=cur.fetchone()
-
-    if row==None:
-
-        showwarning("Bank","Account Not Found")
-
-    else:
-        balance=row[2]
-
-        if balance>=amount:
-
-            query2="update accmaster set balance=balance-? where accno=?"   #update querry
-
-            cur2=conn.cursor()  # fro 2 operation new cursor is required
-
-            cur2.execute(query2,[amount,accno])
-
-            conn.commit()
-
-            if cur2.rowcount>0:
-                
-                showinfo("Bank","Amount Withdraw successfully")
+              showwarning("Bank","Account Not Found") # a warning box will pop up
 
         else:
 
-            showwarning("Bank","Insufficient Balance")
+              showinfo("Bank",f"Accno: {row[0]}\nName:{row[1]}\nBalance:{row[2]}")
+    
+    except ValueError:
 
+        showwarning("Bank", "Please enter a valid account number.")
 
+    except Exception as e:
 
+        showerror("Database Error", str(e))
+    
+def deposit_db(conn,accno,amount):
+    try:
+        accno=int(accno)  
 
+        amount=int(amount)
 
-         
+        if amount <= 0:
+
+            raise ValueError("Amount must be positive.")
+
+        query="update accmaster set balance=balance+? where accno=?"
+
+        cur=conn.cursor()
+
+        cur.execute(query,[amount,accno]) 
+
+        conn.commit()
+
+        if cur.rowcount>0:
+
+            showinfo("Bank","Amount deposited successfully")
+
+        else:
+
+            showwarning("Bank","Account Not Found") 
+
+    except ValueError:
+
+        showwarning("Bank", "Please enter valid numeric values.")
+
+    except Exception as e:
+
+        showerror("Database Error", str(e))        
+
+def withdraw_db(conn,accno,amount):
+
+    try:
+
+        accno=int(accno)  
+
+        amount=int(amount)
+
+        if amount <= 0:
+            
+            raise ValueError("Amount must be positive.")
+
+        query="select * from accmaster where accno=?"
+
+        cur=conn.cursor()
+
+        cur.execute(query,[accno]) 
+
+        row=cur.fetchone()
+
+        if row==None:
+
+              showwarning("Bank","Account Not Found")
+
+        else:
+               balance=row[2]
+
+               if balance>=amount:
+
+                    query2="update accmaster set balance=balance-? where accno=?"   #update querry
+
+                    cur2=conn.cursor()  # for 2 operation new cursor is required
+
+                    cur2.execute(query2,[amount,accno])
+
+                    conn.commit()
+
+                    if cur2.rowcount>0:
+                
+                          showinfo("Bank","Amount Withdraw successfully")
+
+               else:
+
+                         showwarning("Bank","Insufficient Balance")
+
+    except ValueError:
+
+        showwarning("Bank", "Please enter valid numeric values.")
+
+    except Exception as e:
+
+        showerror("Database Error", str(e))    
