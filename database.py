@@ -2,19 +2,102 @@ import sqlite3
 
 from tkinter.messagebox import * #messagebox is a module of tkinter used for making message box(pop up window)
 
-def create_table(conn):  #conn is connection object
+import hashlib # For SHA-256 hashing
 
-    query = "CREATE TABLE IF NOT EXISTS accmaster (accno INTEGER PRIMARY KEY, name TEXT, balance INTEGER)"
-    #will create a table named "accmaster" with 3 columns in the bracket 
+GET_BALANCE_QUERY = "SELECT * FROM accmaster WHERE accno=?"
+# "select query" is the sql query used for data retrival
+
+UPDATE_BALANCE_QUERY = "UPDATE accmaster SET balance=balance+? WHERE accno=?"
+
+SELECT_ACCOUNT_QUERY = "SELECT * FROM accmaster WHERE accno=? AND password=?"
+
+ADMIN_ACCNO = "123"
+
+ADMIN_HASH = hashlib.sha256("123".encode()).hexdigest()
+
+
+def safe_execute(conn, query, params=(), fetch=False, fetchone=False):
 
     try:
 
-        cur=conn.cursor()
+        cur = conn.cursor()
+
+        cur.execute(query, params)
+
+        conn.commit()
+
+        if fetch:
+
+            return cur.fetchall()
+        
+        if fetchone:
+            
+            return cur.fetchone()
+            # one row is retrived from database in the form of a tupple (0,Yuvraj Bisht,100)
+
+        return True
+    
+    except sqlite3.IntegrityError as ie:
+
+        showwarning("Integrity Error", str(ie))
+
+    except sqlite3.OperationalError as oe:
+
+        showerror("Operational Error", str(oe))
+
+    except Exception as e:
+
+        showerror("Database Error", str(e))
+        
+    return None
+
+def create_table(conn): #conn is connection object
+
+    try:
+
+        cur = conn.cursor()
+
         #cursor of conn is created .cur is cusor object
 
-        cur.execute(query)  #execution of query
+        cur.execute('''
+                    
+            CREATE TABLE IF NOT EXISTS accmaster (
+                    
+                accno INTEGER PRIMARY KEY,
+                    
+                name TEXT,
+                    
+                balance INTEGER,
+                    
+                password TEXT
+            )
+                    
+        ''')
+        # will create a table named "accmaster" with 4 columns in the bracket
+        # for comminting changes in database
 
-        conn.commit()  # for comminting changes in datatabase
+        cur.execute('''
+                    
+            CREATE TABLE IF NOT EXISTS transactions (
+                    
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    
+                accno INTEGER,
+                    
+                type TEXT,
+                    
+                amount INTEGER,
+                    
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, 
+                    
+                FOREIGN KEY (accno) REFERENCES accmaster(accno)
+                    
+            )
+                    
+        ''')
+        # DEFAULT CURRENT_TIMESTAMP automatically sets the value to the current date and time when a new row is inserted. 
+
+        conn.commit()  # for comminting changes in database
 
     except Exception as e:
 
@@ -23,7 +106,36 @@ def create_table(conn):  #conn is connection object
         #str(e) converts the exception object to a readable string.
         #showerror() pops up a GUI error dialog with a title and message.
 
-def openAccount_db(conn,accno,name,balance):
+def hash_password(password):
+
+    """Hashes the password using SHA-256."""
+    return hashlib.sha256(password.encode()).hexdigest()   
+
+def is_valid_account_number(accno):
+
+    try:
+
+        int(accno)
+
+        return True
+    
+    except ValueError:
+
+        return False      
+    
+def is_valid_amount(amount):
+
+    try:
+
+        amt = int(amount)
+
+        return amt > 0
+    
+    except ValueError:
+        
+        return False    
+
+def openAccount_db(conn,accno,name,balance, password):
 
     try:
 
@@ -36,20 +148,23 @@ def openAccount_db(conn,accno,name,balance):
             raise ValueError("Balance cannot  be negative.")
 
         if not name.strip():
+
             raise ValueError("Name cannot be empty")
+        
+        if not password.strip():
 
-        query="insert into accmaster values(?,?,?)"    # the ?s are placeholders
+            raise ValueError("Password cannot be empty")
+        
+        hashed_password = hash_password(password)
 
-        cur=conn.cursor()
+        query="insert into accmaster values(?,?,?,?)"    # the ?s are placeholders
 
-        cur.execute(query,[accno,name,balance]) #insert query ke placeholders mein pass hojayega 3 datas
+        success = safe_execute(conn, query, [accno, name, balance, hashed_password])
 
-        conn.commit()
+        if success:
 
-        if cur.rowcount>0:
-
-              showinfo("Bank","Account created successfully")   #showinfo(title,message)   
-              #pop up of showinfo box
+            showinfo("Bank", "Account created successfully") # showinfo(title,message)
+            #pop up of showinfo box
 
     except ValueError:
 
@@ -59,131 +174,117 @@ def openAccount_db(conn,accno,name,balance):
         #Invalid operations on certain data types
         #Shows a warning dialog to alert the user that their input was invalid
 
+def CheckBalance_db(conn, accno):
 
+    if not is_valid_account_number(accno):
 
-    except sqlite3.IntegrityError:
+        showwarning("Bank", "Invalid account number format.")
 
-        showwarning("Bank", "Account number already exists.")
+        return
 
-    except Exception as e:
+    row = safe_execute(conn, GET_BALANCE_QUERY, [int(accno)], fetchone=True)
 
-        showerror("Database Error", str(e))
-  
+    if row:
 
-def CheckBalance_db(conn,accno):
+        showinfo("Bank", f"Accno: {row[0]}\nName:{row[1]}\nBalance:{row[2]}")
 
-    try:
+    else:
 
-        accno=int(accno)
-
-        query="select * from accmaster where accno=?"
-        # "select query" is the sql query used for data retrival
-
-        cur=conn.cursor()
-
-        cur.execute(query,[accno]) 
-
-        row=cur.fetchone() # one row is retrived from database in the form of a tupple (0,Yuvraj Bisht,100)
-
-        if row==None:
-
-              showwarning("Bank","Account Not Found") # a warning box will pop up
-
-        else:
-
-              showinfo("Bank",f"Accno: {row[0]}\nName:{row[1]}\nBalance:{row[2]}")
+        showwarning("Bank", "Account Not Found") # a warning box will pop up
     
+def deposit_db(conn, accno, amount):
+
+    if not is_valid_account_number(accno) or not is_valid_amount(amount):
+
+        showwarning("Bank", "Invalid account number or amount.")
+
+        return
+
+    accno = int(accno)
+
+    amount = int(amount)
+
+    success = safe_execute(conn, UPDATE_BALANCE_QUERY, [amount, accno])
+
+    if success:
+
+        safe_execute(conn, "INSERT INTO transactions (accno, type, amount) VALUES (?, 'deposit', ?)", [accno, amount])
+
+        showinfo("Bank", "Amount deposited successfully")
+
+    else:
+
+        showwarning("Bank", "Account Not Found")        
+
+def withdraw_db(conn, accno, amount):
+
+    if not is_valid_account_number(accno) or not is_valid_amount(amount):
+
+        showwarning("Bank", "Invalid account number or amount.")
+
+        return
+
+    accno = int(accno)
+
+    amount = int(amount)
+
+    row = safe_execute(conn, GET_BALANCE_QUERY, [accno], fetchone=True)
+
+    if not row:
+
+        showwarning("Bank", "Account Not Found")
+
+        return
+
+    balance = row[2]
+
+    if balance >= amount:
+
+        success = safe_execute(conn, "UPDATE accmaster SET balance=balance-? WHERE accno=?", [amount, accno])
+
+        if success:
+
+            safe_execute(conn, "INSERT INTO transactions (accno, type, amount) VALUES (?, 'withdraw', ?)", [accno, amount])
+
+            showinfo("Bank", "Amount Withdrawn successfully")
+
+    else:
+
+        showwarning("Bank", "Insufficient Balance")    
+
+def validate_login_db(conn, accno, password):
+
+    try:
+
+        if accno == ADMIN_ACCNO and hash_password(password) == ADMIN_HASH:
+
+            return "admin"
+
+        accno = int(accno)
+
+        hashed_password = hash_password(password)
+
+        row = safe_execute(conn, SELECT_ACCOUNT_QUERY, [accno, hashed_password], fetchone=True)
+
+        if row:
+
+            return "user"
+        
+        return None
+
     except ValueError:
 
-        showwarning("Bank", "Please enter a valid account number.")
+        showwarning("Login Error", "Please enter a valid account number.")
 
-    except Exception as e:
-
-        showerror("Database Error", str(e))
+        return None          
     
-def deposit_db(conn,accno,amount):
-    try:
-        accno=int(accno)  
+def get_all_transactions(conn):
 
-        amount=int(amount)
+    return safe_execute(conn, "SELECT * FROM transactions ORDER BY timestamp DESC", fetch=True) or []
+    # The ORDER BY timestamp DESC clause sorts them in reverse chronological order — newest transactions come first.
+    # ORDER BY timestamp: Sort the results based on the timestamp column.
+    # DESC: Sort in descending order — i.e., latest first.
 
-        if amount <= 0:
+def get_all_accounts(conn):
 
-            raise ValueError("Amount must be positive.")
-
-        query="update accmaster set balance=balance+? where accno=?"
-
-        cur=conn.cursor()
-
-        cur.execute(query,[amount,accno]) 
-
-        conn.commit()
-
-        if cur.rowcount>0:
-
-            showinfo("Bank","Amount deposited successfully")
-
-        else:
-
-            showwarning("Bank","Account Not Found") 
-
-    except ValueError:
-
-        showwarning("Bank", "Please enter valid numeric values.")
-
-    except Exception as e:
-
-        showerror("Database Error", str(e))        
-
-def withdraw_db(conn,accno,amount):
-
-    try:
-
-        accno=int(accno)  
-
-        amount=int(amount)
-
-        if amount <= 0:
-            
-            raise ValueError("Amount must be positive.")
-
-        query="select * from accmaster where accno=?"
-
-        cur=conn.cursor()
-
-        cur.execute(query,[accno]) 
-
-        row=cur.fetchone()
-
-        if row==None:
-
-              showwarning("Bank","Account Not Found")
-
-        else:
-               balance=row[2]
-
-               if balance>=amount:
-
-                    query2="update accmaster set balance=balance-? where accno=?"   #update querry
-
-                    cur2=conn.cursor()  # for 2 operation new cursor is required
-
-                    cur2.execute(query2,[amount,accno])
-
-                    conn.commit()
-
-                    if cur2.rowcount>0:
-                
-                          showinfo("Bank","Amount Withdraw successfully")
-
-               else:
-
-                         showwarning("Bank","Insufficient Balance")
-
-    except ValueError:
-
-        showwarning("Bank", "Please enter valid numeric values.")
-
-    except Exception as e:
-
-        showerror("Database Error", str(e))    
+    return safe_execute(conn, "SELECT accno, name, balance FROM accmaster", fetch=True) or []
